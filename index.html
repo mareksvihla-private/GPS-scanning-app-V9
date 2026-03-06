@@ -1,0 +1,1496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AssetScan">
+<meta name="theme-color" content="#0a0f1e">
+<title>AssetScan — School Asset Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- ZXing UMD build -->
+<script src="https://unpkg.com/@zxing/library@0.19.3/umd/index.min.js"></script>
+<!-- SheetJS for Excel -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+:root {
+  --bg: #080c1a;
+  --surface: #0e1528;
+  --surface2: #141c33;
+  --border: #1e2d52;
+  --accent: #2563ff;
+  --accent2: #00e5c0;
+  --accent3: #ff5e3a;
+  --text: #e8ecf4;
+  --text2: #8892aa;
+  --text3: #4a5470;
+  --success: #00c97a;
+  --warn: #ffb020;
+  --font-head: 'Inter', sans-serif;
+  --font-mono: 'Inter', sans-serif;
+  --font-code: 'JetBrains Mono', monospace;
+  --radius: 14px;
+  --radius-sm: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-head);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ─────────────────────────────────── */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 600px;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* ── Header ─────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.logo {
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+  color: var(--text);
+}
+.logo span { color: var(--accent2); }
+
+.db-count {
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+}
+.db-count strong { color: var(--accent2); }
+
+/* ── Nav ─────────────────────────────────────── */
+nav {
+  display: flex;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+nav button {
+  flex: 1;
+  padding: 12px 8px;
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+nav button.active {
+  color: var(--accent2);
+  border-bottom-color: var(--accent2);
+}
+nav button:hover:not(.active) { color: var(--text); }
+
+/* ── Screens ─────────────────────────────────── */
+.screen {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+.screen.active { display: flex; }
+
+/* ── Scan Screen ─────────────────────────────── */
+#screen-scan {
+  position: relative;
+}
+
+.camera-wrap {
+  position: relative;
+  flex: 1;
+  background: #000;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.scan-target {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  width: min(80%, 320px);
+  height: 90px;
+}
+
+.scan-target::before,
+.scan-target::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: var(--accent2);
+  border-style: solid;
+}
+.scan-target::before { top: 0; left: 0; border-width: 3px 0 0 3px; }
+.scan-target::after { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+
+.scan-target-inner::before,
+.scan-target-inner::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: var(--accent2);
+  border-style: solid;
+}
+.scan-target-inner::before { top: 0; right: 0; border-width: 3px 3px 0 0; }
+.scan-target-inner::after { bottom: 0; left: 0; border-width: 0 0 3px 3px; }
+
+.scan-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent2), transparent);
+  animation: scanline 2s ease-in-out infinite;
+  box-shadow: 0 0 8px var(--accent2);
+}
+@keyframes scanline {
+  0%, 100% { top: 15%; opacity: 0; }
+  10% { opacity: 1; }
+  50% { top: 85%; }
+  90% { opacity: 1; }
+}
+
+.scan-hint {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px);
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--text2);
+  white-space: nowrap;
+  border: 1px solid var(--border);
+}
+
+.camera-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: var(--text3);
+}
+.camera-placeholder svg { opacity: 0.3; }
+
+.camera-controls {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.btn {
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.btn:active { transform: scale(0.96); }
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  padding: 14px 20px;
+  flex: 1;
+}
+.btn-primary:hover { background: #1d52e8; }
+
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text);
+  padding: 14px 20px;
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border); }
+
+.btn-success {
+  background: var(--success);
+  color: #000;
+  padding: 14px 20px;
+  flex: 1;
+}
+
+.btn-danger {
+  background: var(--accent3);
+  color: #fff;
+  padding: 14px 20px;
+}
+
+.btn-accent {
+  background: var(--accent2);
+  color: #000;
+  padding: 14px 20px;
+  flex: 1;
+}
+
+/* ── Result Panel ─────────────────────────────── */
+.result-panel {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+.result-panel.visible { display: flex; }
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.result-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.result-badge.found { background: rgba(0,201,122,0.15); color: var(--success); border: 1px solid rgba(0,201,122,0.3); }
+.result-badge.new { background: rgba(255,94,58,0.15); color: var(--accent3); border: 1px solid rgba(255,94,58,0.3); }
+
+.result-assetnum {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 17px;
+  flex: 1;
+  letter-spacing: 0.5px;
+}
+
+.result-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.field-grid.full { grid-template-columns: 1fr; }
+
+.field-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.field-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text3);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.field-value {
+  font-size: 15px;
+  color: var(--text);
+  font-weight: 500;
+}
+.field-value.highlight { color: var(--accent2); }
+
+.field-input-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.field-input-wrap label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text3);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+input[type="text"], input[type="datetime-local"], select, textarea {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: var(--font-head);
+  font-size: 15px;
+  -webkit-appearance: none;
+  outline: none;
+  transition: border-color 0.2s;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+select option { background: var(--surface2); }
+textarea { resize: vertical; min-height: 70px; }
+
+.result-actions {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+/* ── Toast ────────────────────────────────────── */
+.toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-80px);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 1000;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.success { border-color: var(--success); }
+.toast.error { border-color: var(--accent3); }
+
+/* ── Data Screen ─────────────────────────────── */
+#screen-data {
+  overflow: hidden;
+}
+
+.data-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.search-input-wrap {
+  flex: 1;
+  min-width: 160px;
+  position: relative;
+}
+.search-input-wrap input {
+  padding-left: 32px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+.search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  pointer-events: none;
+}
+
+.asset-list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.asset-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.asset-item:hover { background: var(--surface); }
+.asset-item:active { background: var(--surface2); }
+
+.asset-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.asset-info { flex: 1; min-width: 0; }
+.asset-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: 0.3px;
+}
+.asset-meta {
+  font-size: 12px;
+  color: var(--text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asset-loc {
+  font-size: 11px;
+  color: var(--accent2);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text3);
+  height: 200px;
+  font-size: 13px;
+}
+
+/* ── Import Screen ───────────────────────────── */
+#screen-import {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px;
+  gap: 16px;
+}
+
+.import-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--surface);
+}
+.import-zone:hover { border-color: var(--accent); background: var(--surface2); }
+.import-zone.drag { border-color: var(--accent2); background: rgba(0,229,192,0.05); }
+
+.import-zone-icon { font-size: 40px; margin-bottom: 12px; }
+.import-zone h3 { font-family: var(--font-head); font-size: 16px; margin-bottom: 4px; }
+.import-zone p { font-size: 12px; color: var(--text2); }
+
+#file-input { display: none; }
+
+.section-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text3);
+  margin-bottom: 10px;
+}
+
+.export-row {
+  display: flex;
+  gap: 10px;
+}
+
+.info-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+.info-box strong { color: var(--accent2); }
+
+/* ── Manual Entry ────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  align-items: flex-end;
+}
+.modal-overlay.open { display: flex; }
+
+.modal {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-height: 90dvh;
+  overflow-y: auto;
+  padding: 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.modal-handle {
+  width: 40px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 0 auto 16px;
+}
+.modal-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  margin-bottom: 20px;
+}
+
+/* ── Scrollbar ───────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Pulse animation for scanning ────────────── */
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.scanning-pulse { animation: pulse 1.5s ease-in-out infinite; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">Asset<span>Scan</span></div>
+    <div class="db-count"><strong id="asset-count">0</strong> assets</div>
+  </header>
+
+  <nav>
+    <button class="active" data-screen="scan" onclick="showScreen('scan')">📷 Scan</button>
+    <button data-screen="data" onclick="showScreen('data')">📋 Assets</button>
+    <button data-screen="import" onclick="showScreen('import')">⚡ Import/Export</button>
+  </nav>
+
+  <!-- ═══════════════ SCAN SCREEN ═══════════════ -->
+  <div id="screen-scan" class="screen active">
+    <!-- Camera view -->
+    <div id="camera-container" class="camera-wrap">
+      <div class="camera-placeholder">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span>Camera off</span>
+      </div>
+      <video id="video" playsinline autoplay muted style="display:none"></video>
+      <div class="scan-overlay" id="scan-overlay" style="display:none">
+        <div class="scan-target">
+          <div class="scan-target-inner"></div>
+          <div class="scan-line"></div>
+        </div>
+      </div>
+      <div class="scan-hint" id="scan-hint" style="display:none">Hold barcode inside the frame</div>
+    </div>
+
+    <!-- Result panel (slides up over camera) -->
+    <div class="result-panel" id="result-panel">
+      <div class="result-header">
+        <div class="result-badge" id="result-badge">Found</div>
+        <div class="result-assetnum" id="result-assetnum"></div>
+        <button class="btn btn-secondary" style="padding:8px 12px;font-size:12px" onclick="dismissResult()">✕</button>
+      </div>
+      <div class="result-body" id="result-body"></div>
+      <div class="result-actions" id="result-actions"></div>
+    </div>
+
+    <div class="camera-controls">
+      <button class="btn btn-primary" id="scan-btn" onclick="toggleCamera()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Start Scanning
+      </button>
+      <button class="btn btn-secondary" onclick="openManualEntry()">Manual</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ DATA SCREEN ═══════════════ -->
+  <div id="screen-data" class="screen">
+    <div class="data-toolbar">
+      <div class="search-input-wrap">
+        <span class="search-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        </span>
+        <input type="text" id="search-input" placeholder="Search assets..." oninput="filterAssets()" style="padding-left:34px">
+      </div>
+    </div>
+    <div class="asset-list" id="asset-list">
+      <div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        No assets yet. Import a CSV/XLS file to get started.
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ IMPORT/EXPORT SCREEN ═══════════════ -->
+  <div id="screen-import" class="screen">
+    <div class="section-title">Import Data</div>
+    <div class="import-zone" id="import-zone" onclick="document.getElementById('file-input').click()">
+      <div class="import-zone-icon">📂</div>
+      <h3>Drop CSV or Excel file here</h3>
+      <p>or tap to browse · supports .csv, .xls, .xlsx</p>
+    </div>
+    <input type="file" id="file-input" accept=".csv,.xls,.xlsx" onchange="handleFileImport(event)">
+
+    <div class="info-box" style="margin-top:0">
+      <strong>Expected columns (any order):</strong><br>
+      Asset number, Type, Make, Model, Location, Date sighted, Comment<br><br>
+      Extra columns are ignored. Header row required.
+    </div>
+
+    <div class="section-title">Export Data</div>
+    <div class="export-row">
+      <button class="btn btn-accent" onclick="exportCSV()" style="flex:1;padding:14px">↓ Download CSV</button>
+      <button class="btn btn-secondary" onclick="exportXLSX()" style="flex:1;padding:14px">↓ Download Excel</button>
+    </div>
+
+    <div class="info-box">
+      <strong>Storage:</strong> All data is saved in your browser's IndexedDB — it persists across refreshes and restarts. Export regularly as a backup to your central system.
+    </div>
+
+    <button class="btn btn-danger" style="width:100%;padding:14px;margin-top:4px" onclick="clearAllData()">🗑 Clear All Data</button>
+  </div>
+</div>
+
+<!-- ═══════════════ MANUAL ENTRY MODAL ═══════════════ -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOnBackdrop(event)">
+  <div class="modal" id="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="modal-title">Add New Asset</div>
+    <div id="modal-body"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-secondary" style="flex:1;padding:14px" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-success" style="flex:1;padding:14px" onclick="saveModalEntry()">Save Asset</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  DATABASE (IndexedDB)
+// ═══════════════════════════════════════════════
+const DB_NAME = 'AssetScanDB';
+const DB_VERSION = 1;
+const STORE = 'assets';
+let db;
+
+function openDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains(STORE)) {
+        const s = d.createObjectStore(STORE, { keyPath: 'assetNumber' });
+        s.createIndex('type', 'type');
+        s.createIndex('location', 'location');
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; res(db); };
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+function dbGet(key) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(key);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+function dbPut(record) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const req = tx.objectStore(STORE).put(record);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+function dbGetAll() {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+function dbDelete(key) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const req = tx.objectStore(STORE).delete(key);
+    req.onsuccess = () => res();
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+function dbClear() {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const req = tx.objectStore(STORE).clear();
+    req.onsuccess = () => res();
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+async function dbCount() {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).count();
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  document.querySelector(`nav button[data-screen="${name}"]`).classList.add('active');
+  if (name === 'data') renderAssetList();
+  if (name === 'scan') dismissResult();
+}
+
+// ═══════════════════════════════════════════════
+//  CAMERA & SCANNING
+// ═══════════════════════════════════════════════
+let cameraActive = false;
+let scanStream = null;
+let scanRafId = null;
+let zxingReader = null;
+let lastScanned = '';
+let lastScannedTime = 0;
+
+// Hidden canvas used for ZXing frame grabs
+let scanCanvas, scanCtx;
+
+async function toggleCamera() {
+  if (cameraActive) stopCamera();
+  else startCamera();
+}
+
+function getZXing() {
+  // The UMD build from unpkg exposes the library as window.ZXing
+  const Z = window.ZXing;
+  if (!Z) return null;
+  // ZXing library UMD exposes BrowserMultiFormatReader directly
+  if (Z.BrowserMultiFormatReader) return Z;
+  return null;
+}
+
+async function startCamera() {
+  const btn = document.getElementById('scan-btn');
+  btn.innerHTML = `<span class="scanning-pulse">⏳</span> Starting...`;
+  btn.disabled = true;
+
+  try {
+    // 1. Request camera — prefer rear/environment camera
+    const constraints = {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    };
+
+    scanStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+    const videoEl = document.getElementById('video');
+    videoEl.srcObject = scanStream;
+    await videoEl.play();
+
+    // Show camera UI
+    videoEl.style.display = 'block';
+    document.getElementById('scan-overlay').style.display = 'block';
+    document.getElementById('scan-hint').style.display = 'block';
+    document.querySelector('.camera-placeholder').style.display = 'none';
+
+    // 2. Set up canvas for frame capture
+    if (!scanCanvas) {
+      scanCanvas = document.createElement('canvas');
+      scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+    }
+
+    // 3. Try ZXing first, fall back to BarcodeDetector (native iOS 17+)
+    const Z = getZXing();
+    if (Z) {
+      zxingReader = new Z.BrowserMultiFormatReader();
+      startZXingLoop(videoEl);
+    } else if ('BarcodeDetector' in window) {
+      startNativeLoop(videoEl);
+    } else {
+      throw new Error('No barcode decoder available. Try iOS 17+ Safari or update your browser.');
+    }
+
+    cameraActive = true;
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Stop Camera`;
+    btn.disabled = false;
+    btn.className = 'btn btn-danger';
+
+  } catch (err) {
+    console.error('Camera error:', err);
+    stopCamera();
+
+    let msg = 'Camera unavailable — use Manual entry';
+    if (err.name === 'NotAllowedError') msg = 'Camera permission denied — check browser settings';
+    else if (err.name === 'NotFoundError') msg = 'No camera found on this device';
+    else if (err.message) msg = err.message;
+
+    showToast(msg, 'error');
+    btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Start Scanning`;
+    btn.disabled = false;
+    btn.className = 'btn btn-primary';
+  }
+}
+
+function startZXingLoop(videoEl) {
+  const Z = getZXing();
+  const hints = new Map();
+  // Prioritise Code128 but allow all 1D formats
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [
+    Z.BarcodeFormat.CODE_128,
+    Z.BarcodeFormat.CODE_39,
+    Z.BarcodeFormat.EAN_13,
+    Z.BarcodeFormat.QR_CODE,
+  ]);
+  const reader = new Z.BrowserMultiFormatReader(hints);
+
+  function tick() {
+    if (!cameraActive) return;
+    if (videoEl.readyState >= 2) {
+      scanCanvas.width = videoEl.videoWidth;
+      scanCanvas.height = videoEl.videoHeight;
+      scanCtx.drawImage(videoEl, 0, 0);
+      try {
+        const luminance = new Z.HTMLCanvasElementLuminanceSource(scanCanvas);
+        const bitmap = new Z.BinaryBitmap(new Z.HybridBinarizer(luminance));
+        const result = reader.decodeBitmap(bitmap);
+        if (result) {
+          handleScanResult(result.getText());
+          return; // pause briefly after a hit — next RAF will resume
+        }
+      } catch (e) {
+        // NotFoundException is normal (no barcode in frame) — keep looping
+      }
+    }
+    scanRafId = requestAnimationFrame(tick);
+  }
+  scanRafId = requestAnimationFrame(tick);
+}
+
+function startNativeLoop(videoEl) {
+  const detector = new BarcodeDetector({
+    formats: ['code_128', 'code_39', 'ean_13', 'qr_code']
+  });
+
+  async function tick() {
+    if (!cameraActive) return;
+    if (videoEl.readyState >= 2) {
+      try {
+        const barcodes = await detector.detect(videoEl);
+        if (barcodes.length > 0) {
+          handleScanResult(barcodes[0].rawValue);
+          await new Promise(r => setTimeout(r, 500)); // short pause after hit
+        }
+      } catch (e) { /* keep going */ }
+    }
+    scanRafId = requestAnimationFrame(tick);
+  }
+  scanRafId = requestAnimationFrame(tick);
+}
+
+function handleScanResult(code) {
+  const now = Date.now();
+  if (code && (code !== lastScanned || now - lastScannedTime > 3000)) {
+    lastScanned = code;
+    lastScannedTime = now;
+    onBarcodeScanned(code);
+    // Resume scanning loop after a pause so user can see result
+    setTimeout(() => {
+      if (cameraActive) {
+        const videoEl = document.getElementById('video');
+        const Z = getZXing();
+        if (Z) startZXingLoop(videoEl);
+        else if ('BarcodeDetector' in window) startNativeLoop(videoEl);
+      }
+    }, 3000);
+  } else if (cameraActive) {
+    // Keep loop going
+    scanRafId = requestAnimationFrame(() => {
+      const videoEl = document.getElementById('video');
+      if (videoEl.readyState >= 2) {
+        const Z = getZXing();
+        if (Z) startZXingLoop(videoEl);
+      }
+    });
+  }
+}
+
+function stopCamera() {
+  cameraActive = false;
+  if (scanRafId) { cancelAnimationFrame(scanRafId); scanRafId = null; }
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  zxingReader = null;
+
+  const videoEl = document.getElementById('video');
+  videoEl.srcObject = null;
+  videoEl.style.display = 'none';
+  document.getElementById('scan-overlay').style.display = 'none';
+  document.getElementById('scan-hint').style.display = 'none';
+  document.querySelector('.camera-placeholder').style.display = 'flex';
+
+  const btn = document.getElementById('scan-btn');
+  btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Start Scanning`;
+  btn.className = 'btn btn-primary';
+  btn.disabled = false;
+}
+
+// ═══════════════════════════════════════════════
+//  SCAN RESULT HANDLING
+// ═══════════════════════════════════════════════
+let currentAsset = null;
+let currentIsNew = false;
+
+async function onBarcodeScanned(code) {
+  // Vibrate on scan
+  if (navigator.vibrate) navigator.vibrate(80);
+  
+  const asset = await dbGet(code);
+  if (asset) {
+    currentAsset = { ...asset };
+    currentIsNew = false;
+    // Auto-update date sighted
+    currentAsset.dateSighted = new Date().toISOString();
+    showResultPanel(currentAsset, false);
+  } else {
+    // New asset
+    currentAsset = {
+      assetNumber: code,
+      type: '',
+      make: '',
+      model: '',
+      location: '',
+      dateSighted: new Date().toISOString(),
+      comment: ''
+    };
+    currentIsNew = true;
+    showResultPanel(currentAsset, true);
+  }
+}
+
+function showResultPanel(asset, isNew) {
+  const panel = document.getElementById('result-panel');
+  const badge = document.getElementById('result-badge');
+  const assetNum = document.getElementById('result-assetnum');
+  const body = document.getElementById('result-body');
+  const actions = document.getElementById('result-actions');
+
+  badge.textContent = isNew ? 'New Asset' : 'Found';
+  badge.className = 'result-badge ' + (isNew ? 'new' : 'found');
+  assetNum.textContent = asset.assetNumber;
+
+  const fmtDate = d => {
+    if (!d) return '—';
+    try { return new Date(d).toLocaleString('en-AU', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }); }
+    catch { return d; }
+  };
+
+  if (isNew) {
+    body.innerHTML = `
+      <p style="color:var(--text2);font-size:12px;margin-bottom:16px">This barcode was not found. Fill in the details to save it.</p>
+      ${formFields(asset)}
+    `;
+    actions.innerHTML = `
+      <button class="btn btn-secondary" style="padding:14px 16px" onclick="dismissResult()">Cancel</button>
+      <button class="btn btn-success" onclick="saveCurrentAsset()">Save New Asset</button>
+    `;
+  } else {
+    body.innerHTML = `
+      <div class="field-grid">
+        <div class="field-card"><div class="field-label">Type</div><div class="field-value">${asset.type || '—'}</div></div>
+        <div class="field-card"><div class="field-label">Make</div><div class="field-value">${asset.make || '—'}</div></div>
+      </div>
+      <div class="field-grid full">
+        <div class="field-card"><div class="field-label">Model</div><div class="field-value">${asset.model || '—'}</div></div>
+      </div>
+      <div class="field-grid">
+        <div class="field-card"><div class="field-label">Date Sighted</div><div class="field-value highlight">${fmtDate(asset.dateSighted)}</div></div>
+        <div class="field-card"><div class="field-label">Previous Location</div><div class="field-value">${asset.location || '—'}</div></div>
+      </div>
+      <div class="field-input-wrap">
+        <label>Update Location</label>
+        <input type="text" id="location-update" value="${asset.location || ''}" placeholder="e.g. MR1012" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase">
+      </div>
+      <div class="field-input-wrap">
+        <label>Comment (optional)</label>
+        <textarea id="comment-update" placeholder="Any notes...">${asset.comment || ''}</textarea>
+      </div>
+    `;
+    actions.innerHTML = `
+      <button class="btn btn-secondary" style="padding:14px 16px" onclick="dismissResult()">Cancel</button>
+      <button class="btn btn-success" onclick="confirmSighting()">✓ Confirm Sighting</button>
+    `;
+  }
+
+  panel.classList.add('visible');
+}
+
+function formFields(asset) {
+  return `
+    <div class="field-input-wrap">
+      <label>Type</label>
+      <select id="f-type">
+        ${['','Laptop','Desktop','Chromebook','iPad','Printer','MLD','Other'].map(t =>
+          `<option value="${t}" ${asset.type===t?'selected':''}>${t||'— Select —'}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field-input-wrap">
+      <label>Make</label>
+      <select id="f-make">
+        ${['','HP','Dell','Acer','Lenovo','Apple','Commbox','Canon','Other'].map(m =>
+          `<option value="${m}" ${asset.make===m?'selected':''}>${m||'— Select —'}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field-input-wrap">
+      <label>Model</label>
+      <input type="text" id="f-model" value="${asset.model||''}" placeholder="e.g. EliteBook 840 G8">
+    </div>
+    <div class="field-input-wrap">
+      <label>Location</label>
+      <input type="text" id="f-location" value="${asset.location||''}" placeholder="e.g. MR1012" autocapitalize="characters" style="text-transform:uppercase">
+    </div>
+    <div class="field-input-wrap">
+      <label>Comment</label>
+      <textarea id="f-comment" placeholder="Any notes...">${asset.comment||''}</textarea>
+    </div>
+  `;
+}
+
+async function confirmSighting() {
+  const loc = document.getElementById('location-update')?.value?.trim().toUpperCase() || currentAsset.location;
+  const comment = document.getElementById('comment-update')?.value?.trim() || currentAsset.comment;
+  currentAsset.location = loc;
+  currentAsset.comment = comment;
+  currentAsset.dateSighted = new Date().toISOString();
+  await dbPut(currentAsset);
+  showToast('✓ Sighting saved — ' + currentAsset.assetNumber, 'success');
+  updateCount();
+  dismissResult();
+}
+
+async function saveCurrentAsset() {
+  const asset = {
+    assetNumber: currentAsset.assetNumber,
+    type: document.getElementById('f-type')?.value || '',
+    make: document.getElementById('f-make')?.value || '',
+    model: document.getElementById('f-model')?.value?.trim() || '',
+    location: (document.getElementById('f-location')?.value?.trim() || '').toUpperCase(),
+    dateSighted: new Date().toISOString(),
+    comment: document.getElementById('f-comment')?.value?.trim() || ''
+  };
+  await dbPut(asset);
+  showToast('✓ New asset saved', 'success');
+  updateCount();
+  dismissResult();
+}
+
+function dismissResult() {
+  document.getElementById('result-panel').classList.remove('visible');
+  currentAsset = null;
+  currentIsNew = false;
+  lastScanned = '';
+}
+
+// ═══════════════════════════════════════════════
+//  MANUAL ENTRY MODAL
+// ═══════════════════════════════════════════════
+let modalMode = 'new';
+let modalEditKey = null;
+
+function openManualEntry(assetToEdit) {
+  const overlay = document.getElementById('modal-overlay');
+  const title = document.getElementById('modal-title');
+  const body = document.getElementById('modal-body');
+
+  if (assetToEdit) {
+    modalMode = 'edit';
+    modalEditKey = assetToEdit.assetNumber;
+    title.textContent = 'Edit Asset';
+    body.innerHTML = `
+      <div class="field-input-wrap">
+        <label>Asset Number</label>
+        <input type="text" id="m-assetnum" value="${assetToEdit.assetNumber}" readonly style="opacity:0.6">
+      </div>
+      ${formFields(assetToEdit)}
+    `;
+    // Pre-fill location with uppercase
+    setTimeout(() => {
+      const locEl = document.getElementById('f-location');
+      if (locEl) locEl.addEventListener('input', e => e.target.value = e.target.value.toUpperCase());
+    }, 50);
+  } else {
+    modalMode = 'new';
+    modalEditKey = null;
+    title.textContent = 'Add New Asset';
+    body.innerHTML = `
+      <div class="field-input-wrap">
+        <label>Asset Number *</label>
+        <input type="text" id="m-assetnum" placeholder="e.g. PC-00123" autocomplete="off">
+      </div>
+      ${formFields({})}
+    `;
+    setTimeout(() => {
+      const locEl = document.getElementById('f-location');
+      if (locEl) locEl.addEventListener('input', e => e.target.value = e.target.value.toUpperCase());
+    }, 50);
+  }
+
+  overlay.classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function closeModalOnBackdrop(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+async function saveModalEntry() {
+  const assetNum = document.getElementById('m-assetnum')?.value?.trim();
+  if (!assetNum) { showToast('Asset number is required', 'error'); return; }
+
+  const asset = {
+    assetNumber: assetNum,
+    type: document.getElementById('f-type')?.value || '',
+    make: document.getElementById('f-make')?.value || '',
+    model: document.getElementById('f-model')?.value?.trim() || '',
+    location: (document.getElementById('f-location')?.value?.trim() || '').toUpperCase(),
+    dateSighted: new Date().toISOString(),
+    comment: document.getElementById('f-comment')?.value?.trim() || ''
+  };
+
+  await dbPut(asset);
+  showToast('✓ Asset saved', 'success');
+  updateCount();
+  closeModal();
+  if (document.getElementById('screen-data').classList.contains('active')) renderAssetList();
+}
+
+// ═══════════════════════════════════════════════
+//  ASSET LIST
+// ═══════════════════════════════════════════════
+let allAssets = [];
+
+const TYPE_COLORS = {
+  'Laptop': '#2563ff', 'Desktop': '#7c3aed', 'Chromebook': '#0891b2',
+  'iPad': '#059669', 'Printer': '#d97706', 'MLD': '#db2777', 'Other': '#6b7280', '': '#374151'
+};
+
+async function renderAssetList(filter = '') {
+  allAssets = await dbGetAll();
+  const q = (filter || document.getElementById('search-input')?.value || '').toLowerCase();
+  const filtered = q ? allAssets.filter(a =>
+    (a.assetNumber||'').toLowerCase().includes(q) ||
+    (a.type||'').toLowerCase().includes(q) ||
+    (a.make||'').toLowerCase().includes(q) ||
+    (a.model||'').toLowerCase().includes(q) ||
+    (a.location||'').toLowerCase().includes(q)
+  ) : allAssets;
+
+  const list = document.getElementById('asset-list');
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>${q ? 'No matching assets' : 'No assets yet. Import a CSV/XLS to get started.'}</div>`;
+    return;
+  }
+
+  const fmtDate = d => {
+    if (!d) return '';
+    try { return new Date(d).toLocaleDateString('en-AU', {day:'2-digit',month:'short',year:'numeric'}); }
+    catch { return d; }
+  };
+
+  list.innerHTML = filtered.map(a => `
+    <div class="asset-item" onclick='editAsset(${JSON.stringify(a.assetNumber)})'>
+      <div class="asset-dot" style="background:${TYPE_COLORS[a.type]||'#374151'}"></div>
+      <div class="asset-info">
+        <div class="asset-num">${a.assetNumber}</div>
+        <div class="asset-meta">${[a.type,a.make,a.model].filter(Boolean).join(' · ')} ${a.dateSighted ? '· '+fmtDate(a.dateSighted) : ''}</div>
+      </div>
+      <div class="asset-loc">${a.location||'—'}</div>
+    </div>
+  `).join('');
+}
+
+async function editAsset(assetNum) {
+  const asset = await dbGet(assetNum);
+  if (asset) openManualEntry(asset);
+}
+
+function filterAssets() {
+  renderAssetList();
+}
+
+// ═══════════════════════════════════════════════
+//  IMPORT
+// ═══════════════════════════════════════════════
+const FIELD_MAP = {
+  'asset number': 'assetNumber', 'asset_number': 'assetNumber', 'assetnumber': 'assetNumber', 'asset no': 'assetNumber', 'assetno': 'assetNumber', 'id': 'assetNumber',
+  'type': 'type',
+  'make': 'make',
+  'model': 'model',
+  'location': 'location',
+  'date sighted': 'dateSighted', 'date_sighted': 'dateSighted', 'datesighted': 'dateSighted', 'last sighted': 'dateSighted',
+  'comment': 'comment', 'comments': 'comment', 'notes': 'comment'
+};
+
+function normalizeHeader(h) {
+  return (h||'').toString().trim().toLowerCase().replace(/[\s_]+/g,' ');
+}
+
+async function handleFileImport(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  event.target.value = '';
+
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows = [];
+
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  } catch (e) {
+    showToast('Could not read file: ' + e.message, 'error');
+    return;
+  }
+
+  if (rows.length === 0) { showToast('File is empty', 'error'); return; }
+
+  // Map headers
+  const sampleRow = rows[0];
+  const headerMap = {};
+  Object.keys(sampleRow).forEach(h => {
+    const norm = normalizeHeader(h);
+    if (FIELD_MAP[norm]) headerMap[h] = FIELD_MAP[norm];
+  });
+
+  if (!Object.values(headerMap).includes('assetNumber')) {
+    showToast('Could not find Asset Number column', 'error');
+    return;
+  }
+
+  let imported = 0, skipped = 0;
+  for (const row of rows) {
+    const asset = { assetNumber: '', type: '', make: '', model: '', location: '', dateSighted: '', comment: '' };
+    Object.keys(headerMap).forEach(h => {
+      const field = headerMap[h];
+      let val = (row[h] ?? '').toString().trim();
+      if (field === 'dateSighted' && val) {
+        // Try to parse date
+        const d = new Date(val);
+        asset[field] = isNaN(d) ? val : d.toISOString();
+      } else if (field === 'location') {
+        asset[field] = val.toUpperCase();
+      } else {
+        asset[field] = val;
+      }
+    });
+    if (!asset.assetNumber) { skipped++; continue; }
+    await dbPut(asset);
+    imported++;
+  }
+
+  showToast(`✓ Imported ${imported} assets${skipped?' ('+skipped+' skipped)':''}`, 'success');
+  updateCount();
+}
+
+// Drag & drop
+const importZone = document.getElementById('import-zone');
+importZone.addEventListener('dragover', e => { e.preventDefault(); importZone.classList.add('drag'); });
+importZone.addEventListener('dragleave', () => importZone.classList.remove('drag'));
+importZone.addEventListener('drop', e => {
+  e.preventDefault();
+  importZone.classList.remove('drag');
+  const file = e.dataTransfer.files?.[0];
+  if (file) handleFileImport({ target: { files: [file], value: '' } });
+});
+
+// ═══════════════════════════════════════════════
+//  EXPORT
+// ═══════════════════════════════════════════════
+const HEADERS = ['Asset number','Type','Make','Model','Location','Date sighted','Comment'];
+const FIELDS  = ['assetNumber','type','make','model','location','dateSighted','comment'];
+
+async function exportCSV() {
+  const assets = await dbGetAll();
+  if (assets.length === 0) { showToast('No data to export', 'error'); return; }
+  const rows = [HEADERS.join(',')];
+  assets.forEach(a => {
+    rows.push(FIELDS.map(f => {
+      let v = (a[f] ?? '').toString().replace(/"/g,'""');
+      return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v}"` : v;
+    }).join(','));
+  });
+  downloadBlob(rows.join('\n'), 'assets-' + todayStr() + '.csv', 'text/csv');
+  showToast('CSV downloaded', 'success');
+}
+
+async function exportXLSX() {
+  const assets = await dbGetAll();
+  if (assets.length === 0) { showToast('No data to export', 'error'); return; }
+  const ws = XLSX.utils.json_to_sheet(assets.map(a => {
+    const obj = {};
+    FIELDS.forEach((f,i) => obj[HEADERS[i]] = a[f] ?? '');
+    return obj;
+  }), { header: HEADERS });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Assets');
+  XLSX.writeFile(wb, 'assets-' + todayStr() + '.xlsx');
+  showToast('Excel downloaded', 'success');
+}
+
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0,10);
+}
+
+async function clearAllData() {
+  if (!confirm('Delete ALL asset records? This cannot be undone.')) return;
+  await dbClear();
+  showToast('All data cleared', 'success');
+  updateCount();
+}
+
+// ═══════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => t.classList.add('show'));
+  });
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+async function updateCount() {
+  const n = await dbCount();
+  document.getElementById('asset-count').textContent = n;
+}
+
+// ═══════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════
+(async () => {
+  await openDB();
+  await updateCount();
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(console.warn);
+  }
+
+  // Auto-uppercase location fields
+  document.addEventListener('input', e => {
+    if (e.target.id === 'f-location' || e.target.id === 'location-update') {
+      const pos = e.target.selectionStart;
+      e.target.value = e.target.value.toUpperCase();
+      e.target.setSelectionRange(pos, pos);
+    }
+  });
+})();
+</script>
+</body>
+</html>
